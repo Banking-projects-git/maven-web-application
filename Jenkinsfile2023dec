@@ -1,0 +1,82 @@
+pipeline{
+agent any
+
+tools{
+maven 'maven3.9.5'
+}
+options {
+    timestamps()
+  buildDiscarder logRotator(artifactDaysToKeepStr: '', artifactNumToKeepStr: '6', daysToKeepStr: '', numToKeepStr: '6')
+}
+
+stages{
+//Getting the code from GitHub Repo
+  stage('CheckoutCode'){
+  steps{
+  
+  git branch: 'development', credentialsId: 'ef5c24ce-3ce2-4658-a20d-d9c9c1289fbb', url: 'https://github.com/Banking-projects-git/maven-web-application.git'
+      }
+}
+  //After getting coe doing the build using maven
+  stage('Build'){
+  steps{
+   sh "mvn clean package"
+  }
+  }
+  
+  //Executing sonarqube Report
+  /*stage('SOnarQubeReport'){
+  steps{
+   sh "mvn clean sonar:sonar"
+  }
+  }*/
+  
+  //Uploading artifcats into Nexus repo
+  stage('UploadArtifactinotNexus'){
+  steps{
+   sh "mvn deploy"
+  }
+  }
+  
+  stage('DeployAppintoTomcatServer'){
+  steps{
+  sshagent(['168ca954-6f37-4b97-a1a3-c177a4f9a078']) {
+    sh "scp -o StrictHostKeyChecking=no target/maven-web-application.war ec2-user@172.31.19.87:/opt/apache-tomcat-9.0.83/webapps "
+  }
+  }
+  }
+ 
+
+}//stages closing
+post {
+  success {
+    // One or more steps need to be included within each condition's block.
+  notifySlack(currentBuild.result)
+  }
+  failure {
+    // One or more steps need to be included within each condition's block.
+notifySlack(currentBuild.result)
+  }
+}
+}//piepline closing
+
+def notifySlack(String buildStatus = 'STARTED') {
+    // Build status of null means success.
+    buildStatus = buildStatus ?: 'SUCCESS'
+
+    def color
+
+    if (buildStatus == 'STARTED') {
+        color = '#D4DADF'
+    } else if (buildStatus == 'SUCCESS') {
+        color = '#BDFFC3'
+    } else if (buildStatus == 'UNSTABLE') {
+        color = '#FFFE89'
+    } else {
+        color = '#FF9FA1'
+    }
+
+    def msg = "${buildStatus}: `${env.JOB_NAME}` #${env.BUILD_NUMBER}:\n${env.BUILD_URL}"
+
+    slackSend(color: color, message: msg)
+}
